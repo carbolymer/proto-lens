@@ -74,6 +74,7 @@ import Distribution.Simple.Utils
     )
 #if MIN_VERSION_Cabal(2,4,0)
 import Distribution.Simple.Glob (matchDirFileGlob)
+import Distribution.Utils.Path (getSymbolicPath, makeSymbolicPath)
 #endif
 import Distribution.Simple
     ( defaultMainWithHooks
@@ -170,7 +171,7 @@ generatingProtos root = generatingSpecificProtos root getProtos
     getProtos l = do
       -- Replicate Cabal's own logic for parsing file globs.
       files <- concat <$> mapM (match $ localPkgDescr l)
-                               (extraSrcFiles $ localPkgDescr l)
+                               (map getSymbolicPath $ extraSrcFiles $ localPkgDescr l)
       pure
            . filter (\f -> takeExtension f == ".proto")
            . map (makeRelative root)
@@ -179,7 +180,7 @@ generatingProtos root = generatingSpecificProtos root getProtos
 
 match :: PackageDescription -> FilePath -> IO [FilePath]
 #if MIN_VERSION_Cabal(2,4,0)
-match desc f = matchDirFileGlob normal (specVersion desc) "." f
+match desc f = map getSymbolicPath <$> matchDirFileGlob normal (specVersion desc) (Just $ makeSymbolicPath ".") (makeSymbolicPath f)
 #else
 match _ f = matchFileGlob f
 #endif
@@ -254,7 +255,7 @@ generateSources root l files = withSystemTempDirectory "protoc-out" $ \tmpDir ->
           let sourcePath = tmpDir </> f
           sourceExists <- doesFileExist sourcePath
           when sourceExists $ do
-            let dest = autogenComponentModulesDir l compBI </> f
+            let dest = getSymbolicPath (autogenComponentModulesDir l compBI) </> f
             copyIfDifferent sourcePath dest
 
 -- Note: we do a copy rather than a move since a given module may be used in
