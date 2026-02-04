@@ -74,7 +74,10 @@ import Distribution.Simple.Utils
     )
 #if MIN_VERSION_Cabal(2,4,0)
 import Distribution.Simple.Glob (matchDirFileGlob)
-import Distribution.Utils.Path (getSymbolicPath, makeSymbolicPath)
+import Distribution.Utils.Path (getSymbolicPath, SymbolicPath)
+#if MIN_VERSION_Cabal(3,14,0)
+import Distribution.Utils.Path (makeSymbolicPath)
+#endif
 #endif
 import Distribution.Simple
     ( defaultMainWithHooks
@@ -109,6 +112,20 @@ import System.IO.Temp (withSystemTempDirectory)
 import System.Process (callProcess)
 
 import Data.ProtoLens.Compiler.ModuleName (protoModuleName)
+
+-- Compatibility shim for the change of 'FilePath' to 'SymbolicPath' in Cabal-3.14.1 in few places
+#if MIN_VERSION_Cabal(3,14,0)
+getSymbolicPath' = getSymbolicPath
+
+matchDirFileGlob' ver specVer path = matchDirFileGlob ver specVer (Just path)
+#else
+getSymbolicPath' = id
+
+matchDirFileGlob' = matchDirFileGlob
+
+makeSymbolicPath :: FilePath -> FilePath
+makeSymbolicPath = id
+#endif
 
 -- | This behaves the same as 'Distribution.Simple.defaultMain', but
 -- auto-generates Haskell files from .proto files which are:
@@ -171,7 +188,7 @@ generatingProtos root = generatingSpecificProtos root getProtos
     getProtos l = do
       -- Replicate Cabal's own logic for parsing file globs.
       files <- concat <$> mapM (match $ localPkgDescr l)
-                               (map getSymbolicPath $ extraSrcFiles $ localPkgDescr l)
+                               (map getSymbolicPath' $ extraSrcFiles $ localPkgDescr l)
       pure
            . filter (\f -> takeExtension f == ".proto")
            . map (makeRelative root)
@@ -180,7 +197,7 @@ generatingProtos root = generatingSpecificProtos root getProtos
 
 match :: PackageDescription -> FilePath -> IO [FilePath]
 #if MIN_VERSION_Cabal(2,4,0)
-match desc f = map getSymbolicPath <$> matchDirFileGlob normal (specVersion desc) (Just $ makeSymbolicPath ".") (makeSymbolicPath f)
+match desc f = map getSymbolicPath' <$> matchDirFileGlob' normal (specVersion desc) (makeSymbolicPath ".") (makeSymbolicPath f)
 #else
 match _ f = matchFileGlob f
 #endif
@@ -255,7 +272,7 @@ generateSources root l files = withSystemTempDirectory "protoc-out" $ \tmpDir ->
           let sourcePath = tmpDir </> f
           sourceExists <- doesFileExist sourcePath
           when sourceExists $ do
-            let dest = getSymbolicPath (autogenComponentModulesDir l compBI) </> f
+            let dest = getSymbolicPath' (autogenComponentModulesDir l compBI) </> f
             copyIfDifferent sourcePath dest
 
 -- Note: we do a copy rather than a move since a given module may be used in
